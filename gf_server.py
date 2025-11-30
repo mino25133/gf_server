@@ -194,20 +194,36 @@ def upload_lines():
 
 LINES_TEMPLATE = """
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>GF - سطور العميل {{ client_id }}</title>
+    <title>GF - Lignes du client {{ client_id }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
+        :root {
+            --bg: #020617;
+            --bg-card: #020617;
+            --bg-card-soft: #020617;
+            --border: #1f2937;
+            --accent: #0ea5e9;
+            --accent-soft: #38bdf8;
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             margin: 0;
             padding: 0;
-            background: #020617;
-            color: #e5e7eb;
+            background: var(--bg);
+            color: var(--text-main);
         }
+
         header {
             padding: 12px 16px;
             background: linear-gradient(135deg, #38bdf8, #0ea5e9);
@@ -216,188 +232,300 @@ LINES_TEMPLATE = """
             font-weight: 600;
             font-size: 18px;
         }
+
         .container {
-            padding: 10px;
+            max-width: 520px;
+            margin: 0 auto;
+            padding: 10px 10px 16px 10px;
         }
-        form.filters {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
+
+        .filters {
             margin-bottom: 10px;
         }
-        form.filters input, form.filters select {
-            padding: 6px 8px;
+
+        .filters form {
+            display: flex;
+            flex-direction: row;
+            gap: 6px;
+        }
+
+        .filters input[type="text"] {
+            flex: 1;
+            padding: 9px 11px;
             border-radius: 999px;
             border: 1px solid #1e293b;
             background: #020617;
-            color: #e5e7eb;
-            font-size: 13px;
+            color: var(--text-main);
+            font-size: 14px;
             outline: none;
         }
-        form.filters button {
-            padding: 7px 10px;
-            border-radius: 999px;
+
+        .filters input[type="text"]::placeholder {
+            color: var(--text-muted);
+        }
+
+        .filters button {
             border: none;
-            background: #0ea5e9;
-            color: white;
+            border-radius: 999px;
+            padding: 8px 12px;
+            background: var(--accent);
+            color: #fff;
             font-size: 13px;
             font-weight: 600;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: #020617;
-            border-radius: 12px;
-            overflow: hidden;
-            font-size: 13px;
-        }
-        thead {
-            background: #111827;
-        }
-        th, td {
-            padding: 6px 4px;
-            border-bottom: 1px solid #0b1120;
-            text-align: center;
             white-space: nowrap;
         }
-        tbody tr:nth-child(even) {
-            background: #020617;
+
+        .summary {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin: 4px 2px 10px 2px;
         }
-        tbody tr:nth-child(odd) {
-            background: #030712;
+
+        .card {
+            display: block;
+            background: var(--bg-card);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 10px 30px rgba(15,23,42,0.6);
+            padding: 10px 11px;
+            margin-bottom: 8px;
+            text-decoration: none;
+            color: inherit;
         }
-        tbody tr:hover {
-            background: #0f172a;
+
+        .card-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 4px;
         }
-        .small { font-size: 11px; opacity: 0.85; }
+
+        .ref {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .prix {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--accent-soft);
+        }
+
+        .designation {
+            font-size: 14px;
+            margin-bottom: 6px;
+        }
+
+        .meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
         .badge {
-            display: inline-block;
-            padding: 2px 6px;
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
             border-radius: 999px;
-            background: #0ea5e9;
-            color: white;
             font-size: 11px;
+            border: 1px solid #1f2937;
+            background: #020617;
+            color: var(--text-main);
             text-decoration: none;
         }
-        .badge:hover {
-            background: #0284c7;
+
+        .badge-marque {
+            border-color: #111827;
         }
+
+        .badge-fournisseur {
+            border-color: var(--accent);
+        }
+
+        .badge-fournisseur span.icon {
+            font-size: 13px;
+            margin-right: 4px;
+        }
+
+        .date {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .no-data {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-top: 30px;
+        }
+
         footer {
             text-align: center;
             font-size: 11px;
-            padding: 6px 0 10px;
-            opacity: 0.8;
+            padding-top: 10px;
+            color: var(--text-muted);
         }
     </style>
 </head>
 <body>
 <header>
-    AminosTech© GF - سطور العميل {{ client_id }}
+    AminosTech© GF — Lignes du client {{ client_id }}
 </header>
+
 <div class="container">
 
-    <form class="filters" method="get">
-        <input type="text" name="q" value="{{ q }}" placeholder="بحث عام (المرجع، التسمية، الماركة، المورد)">
-        <button type="submit">تطبيق الفلترة</button>
-    </form>
+    <div class="filters">
+        <form method="get">
+            <input type="text"
+                   name="q"
+                   value="{{ q }}"
+                   placeholder="Recherche : référence, désignation, marque ou fournisseur">
+            <button type="submit">OK</button>
+        </form>
+    </div>
 
-    <p class="small">
-        عدد السطور المعروضة: {{ rows|length }}
-    </p>
+    <div class="summary">
+        {{ rows|length }} lignes trouvées
+        {% if q %}
+            • filtre : « {{ q }} »
+        {% endif %}
+    </div>
 
-    <table>
-        <thead>
-            <tr>
-                <th>#</th>
-                <th>Reference</th>
-                <th>Désignation</th>
-                <th>Marque</th>
-                <th>Prix</th>
-                <th>Date</th>
-                <th>المورد</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for r in rows %}
-            <tr>
-                <td class="small">{{ r["id"] }}</td>
-                <td>{{ r["reference"] }}</td>
-                <td>{{ r["designation"] }}</td>
-                <td>{{ r["marque"] }}</td>
-                <td class="small">{{ r["prix"] }}</td>
-                <td class="small">{{ r["date"] }}</td>
-                <td>
-                    {% if r["supplier_id"] %}
-                        <a class="badge" href="{{ url_for('supplier_page', client_id=client_id, supplier_id=r['supplier_id']) }}">بيانات المورد</a>
-                    {% else %}
-                        <span class="small">غير محدد</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    {% if rows|length == 0 %}
+        <div class="no-data">
+            Aucune ligne à afficher pour le moment.
+        </div>
+    {% else %}
+        {% for r in rows %}
+            <a class="card"
+               {% if r["supplier_id"] %}
+               href="{{ url_for('supplier_page', client_id=client_id, supplier_id=r['supplier_id']) }}"
+               {% else %}
+               href="javascript:void(0);"
+               {% endif %}>
+                <div class="card-top">
+                    <div class="ref">{{ r["reference"] or "—" }}</div>
+                    <div class="prix">
+                        {% if r["prix"] is not none %}
+                            {{ r["prix"] }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="designation">
+                    {{ r["designation"] or "" }}
+                </div>
+
+                <div class="meta-row">
+                    <div class="badge badge-marque">
+                        {{ r["marque"] or "Sans marque" }}
+                    </div>
+
+                    <div class="badge badge-fournisseur">
+                        <span class="icon">👤</span>
+                        {{ r["supplier_name"] or "Fournisseur inconnu" }}
+                    </div>
+                </div>
+
+                <div class="date">
+                    Date : {{ r["date"] or "—" }} • ID: {{ r["id"] }}
+                </div>
+            </a>
+        {% endfor %}
+    {% endif %}
 
     <footer>
-        AminosTech© Gestion Fournisseur • نسخة موبايل (قراءة فقط)
+        AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
     </footer>
-
 </div>
 </body>
 </html>
 """
 
 
+
 SUPPLIER_TEMPLATE = """
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="fr">
 <head>
     <meta charset="utf-8">
-    <title>بيانات المورد</title>
+    <title>Fiche fournisseur</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <style>
+        :root {
+            --bg: #020617;
+            --bg-card: #020617;
+            --border: #1f2937;
+            --accent: #0ea5e9;
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             margin: 0;
             padding: 0;
-            background: #020617;
-            color: #e5e7eb;
+            background: var(--bg);
+            color: var(--text-main);
         }
+
         .card {
-            margin: 16px;
-            padding: 14px;
+            max-width: 520px;
+            margin: 18px auto;
+            padding: 14px 14px 16px 14px;
             border-radius: 18px;
-            background: #020617;
-            box-shadow: 0 10px 30px rgba(15,23,42,0.7);
-            border: 1px solid #1f2937;
+            background: var(--bg-card);
+            box-shadow: 0 12px 32px rgba(15,23,42,0.7);
+            border: 1px solid var(--border);
         }
+
         h1 {
-            margin: 0 0 10px 0;
-            font-size: 18px;
+            margin: 0 0 8px 0;
+            font-size: 20px;
             color: #f9fafb;
         }
-        .label {
-            font-size: 11px;
-            opacity: 0.7;
-        }
-        .value {
-            font-size: 14px;
+
+        .line {
             margin-bottom: 8px;
         }
+
+        .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 2px;
+        }
+
+        .value {
+            font-size: 14px;
+        }
+
         .pill {
             display: inline-block;
-            padding: 3px 8px;
+            padding: 3px 9px;
             border-radius: 999px;
-            background: #0ea5e9;
-            color: white;
+            background: var(--accent);
+            color: #fff;
             font-size: 11px;
         }
+
         a.back {
             display: inline-block;
-            margin-top: 10px;
-            font-size: 12px;
-            color: #38bdf8;
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--accent);
             text-decoration: none;
         }
     </style>
@@ -406,25 +534,36 @@ SUPPLIER_TEMPLATE = """
 <div class="card">
     <h1>{{ supplier["name"] }}</h1>
 
-    <div class="label">الكود</div>
-    <div class="value"><span class="pill">{{ supplier["supplier_code"] or "غير محدد" }}</span></div>
+    <div class="line">
+        <div class="label">Code fournisseur</div>
+        <div class="value">
+            <span class="pill">{{ supplier["supplier_code"] or "Non défini" }}</span>
+        </div>
+    </div>
 
-    <div class="label">الهاتف</div>
-    <div class="value">{{ supplier["phone"] or "غير مسجل" }}</div>
+    <div class="line">
+        <div class="label">Téléphone</div>
+        <div class="value">{{ supplier["phone"] or "Non renseigné" }}</div>
+    </div>
 
-    <div class="label">العنوان</div>
-    <div class="value">{{ supplier["address"] or "غير مسجل" }}</div>
+    <div class="line">
+        <div class="label">Adresse</div>
+        <div class="value">{{ supplier["address"] or "Non renseignée" }}</div>
+    </div>
 
-    <div class="label">ملاحظات</div>
-    <div class="value">{{ supplier["notes"] or "لا توجد ملاحظات" }}</div>
+    <div class="line">
+        <div class="label">Notes</div>
+        <div class="value">{{ supplier["notes"] or "Aucune note" }}</div>
+    </div>
 
     <a class="back" href="{{ url_for('client_lines', client_id=client_id) }}">
-        ⬅ الرجوع إلى السطور
+        ⬅ Retour aux lignes
     </a>
 </div>
 </body>
 </html>
 """
+
 
 
 @app.get("/")
