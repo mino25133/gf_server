@@ -85,25 +85,52 @@ def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
     """
     code    = supplier.get("code") or supplier.get("name") or "NO-CODE"
     name    = supplier.get("name") or code
-    phone   = supplier.get("phone") or ""
-    email   = supplier.get("email") or ""
-    address = supplier.get("address") or ""
-    notes   = supplier.get("notes") or ""
+    phone   = (supplier.get("phone") or "").strip()
+    email   = (supplier.get("email") or "").strip()
+    address = (supplier.get("address") or "").strip()
+    notes   = (supplier.get("notes") or "").strip()
 
     cur = conn.cursor()
-    # نحاول إدخال المورد إن لم يكن موجوداً
-    cur.execute("""
-        INSERT OR IGNORE INTO suppliers (client_id, supplier_code, name, phone, email, address, notes)
-        VALUES (?,?,?,?,?,?,?)
-    """, (client_id, code, name, phone, email, address, notes))
 
-    # الآن نأخذ id
+    # 1) نحاول العثور على المورد أولاً
     cur.execute("""
-        SELECT id FROM suppliers
+        SELECT id, phone, email, address, notes
+        FROM suppliers
         WHERE client_id = ? AND supplier_code = ?
     """, (client_id, code))
     row = cur.fetchone()
-    return int(row["id"]) if row else None
+
+    if row is None:
+        # 2) غير موجود → ندخله
+        cur.execute("""
+            INSERT INTO suppliers (client_id, supplier_code, name, phone, email, address, notes)
+            VALUES (?,?,?,?,?,?,?)
+        """, (client_id, code, name, phone, email, address, notes))
+        return cur.lastrowid
+
+    # 3) موجود → نحدّث فقط القيم غير الفارغة
+    supplier_id   = int(row["id"])
+    cur_phone     = (row["phone"] or "").strip()
+    cur_email     = (row["email"] or "").strip()
+    cur_address   = (row["address"] or "").strip()
+    cur_notes     = (row["notes"] or "").strip()
+
+    new_phone   = phone   or cur_phone
+    new_email   = email   or cur_email
+    new_address = address or cur_address
+    new_notes   = notes   or cur_notes
+
+    if (new_phone != cur_phone or
+        new_email != cur_email or
+        new_address != cur_address or
+        new_notes != cur_notes):
+        cur.execute("""
+            UPDATE suppliers
+            SET phone = ?, email = ?, address = ?, notes = ?
+            WHERE id = ?
+        """, (new_phone, new_email, new_address, new_notes, supplier_id))
+
+    return supplier_id
 
 
 
