@@ -4,7 +4,8 @@ from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "gf_server.db")
+DB_PATH = os.path.join(BASE_DIR, "gf_server_v2.db")
+
 
 app = Flask(__name__)
 
@@ -35,7 +36,7 @@ def init_db():
     """)
 
     # جدول الموردين
-        # جدول الموردين
+        
     cur.execute("""
         CREATE TABLE IF NOT EXISTS suppliers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -809,10 +810,6 @@ def supplier_page(client_id, supplier_id):
     return render_template_string(SUPPLIER_TEMPLATE, client_id=client_id, supplier=supplier)
 
 
-if __name__ == "__main__":
-    init_db()
-    # للسيرفر المحلي: 0.0.0.0 يعني يشتغل على كل العناوين في الشبكة
-    app.run(host="0.0.0.0", port=8000, debug=False)
 @app.get("/client/<client_id>/line/<int:line_id>")
 def line_detail(client_id, line_id):
     if client_id != TEST_CLIENT_ID:
@@ -842,3 +839,8 @@ def line_detail(client_id, line_id):
         return "Line not found", 404
 
     return render_template_string(LINE_DETAIL_TEMPLATE, client_id=client_id, line=row)
+
+
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=8000, debug=False)
