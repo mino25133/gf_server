@@ -35,6 +35,7 @@ def init_db():
     """)
 
     # جدول الموردين
+        # جدول الموردين
     cur.execute("""
         CREATE TABLE IF NOT EXISTS suppliers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,11 +43,13 @@ def init_db():
             supplier_code TEXT,
             name TEXT NOT NULL,
             phone TEXT,
+            email TEXT,
             address TEXT,
             notes TEXT,
             UNIQUE (client_id, supplier_code)
         )
     """)
+
 
     # جدول السطور
     cur.execute("""
@@ -79,18 +82,19 @@ def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
     حفظ/تحديث المورد في جدول السيرفر.
     يرجع supplier_id
     """
-    code = supplier.get("code") or supplier.get("name") or "NO-CODE"
-    name = supplier.get("name") or code
-    phone = supplier.get("phone") or ""
+    code    = supplier.get("code") or supplier.get("name") or "NO-CODE"
+    name    = supplier.get("name") or code
+    phone   = supplier.get("phone") or ""
+    email   = supplier.get("email") or ""
     address = supplier.get("address") or ""
-    notes = supplier.get("notes") or ""
+    notes   = supplier.get("notes") or ""
 
     cur = conn.cursor()
     # نحاول إدخال المورد إن لم يكن موجوداً
     cur.execute("""
-        INSERT OR IGNORE INTO suppliers (client_id, supplier_code, name, phone, address, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (client_id, code, name, phone, address, notes))
+        INSERT OR IGNORE INTO suppliers (client_id, supplier_code, name, phone, email, address, notes)
+        VALUES (?,?,?,?,?,?,?)
+    """, (client_id, code, name, phone, email, address, notes))
 
     # الآن نأخذ id
     cur.execute("""
@@ -99,6 +103,7 @@ def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
     """, (client_id, code))
     row = cur.fetchone()
     return int(row["id"]) if row else None
+
 
 
 # ============= API: استقبال السطور من GF =============
@@ -402,11 +407,8 @@ LINES_TEMPLATE = """
     {% else %}
         {% for r in rows %}
             <a class="card"
-               {% if r["supplier_id"] %}
-               href="{{ url_for('supplier_page', client_id=client_id, supplier_id=r['supplier_id']) }}"
-               {% else %}
-               href="javascript:void(0);"
-               {% endif %}>
+   href="{{ url_for('line_detail', client_id=client_id, line_id=r['id']) }}">
+
                 <div class="card-top">
                     <div class="ref">{{ r["reference"] or "—" }}</div>
                     <div class="prix">
@@ -448,6 +450,180 @@ LINES_TEMPLATE = """
 </html>
 """
 
+LINE_DETAIL_TEMPLATE = """
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Détail de la ligne</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --bg: #020617;
+            --bg-card: #020617;
+            --border: #1f2937;
+            --accent: #0ea5e9;
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: var(--bg);
+            color: var(--text-main);
+        }
+
+        .card {
+            max-width: 520px;
+            margin: 18px auto;
+            padding: 14px 14px 18px 14px;
+            border-radius: 18px;
+            background: var(--bg-card);
+            box-shadow: 0 12px 32px rgba(15,23,42,0.7);
+            border: 1px solid var(--border);
+        }
+
+        h1 {
+            margin: 0 0 10px 0;
+            font-size: 20px;
+            color: #f9fafb;
+        }
+
+        .line {
+            margin-bottom: 9px;
+        }
+
+        .label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 2px;
+        }
+
+        .value {
+            font-size: 14px;
+        }
+
+        .pill-ref {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #0ea5e9;
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+            letter-spacing: 0.05em;
+        }
+
+        .pill-marque {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 999px;
+            border: 1px solid #1f2937;
+            font-size: 12px;
+        }
+
+        .pill-prix {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #22c55e22;
+            border: 1px solid #22c55e55;
+            font-size: 13px;
+        }
+
+        .value-strong {
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .back {
+            display: inline-block;
+            margin-top: 14px;
+            font-size: 13px;
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .supplier-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Détail de la ligne</h1>
+
+    <div class="line">
+        <div class="label">Référence</div>
+        <div class="value">
+            <span class="pill-ref">{{ line["reference"] or "—" }}</span>
+        </div>
+    </div>
+
+    <div class="line">
+        <div class="label">Désignation</div>
+        <div class="value value-strong">{{ line["designation"] or "—" }}</div>
+    </div>
+
+    <div class="line">
+        <div class="label">Marque</div>
+        <div class="value">
+            <span class="pill-marque">{{ line["marque"] or "Sans marque" }}</span>
+        </div>
+    </div>
+
+    <div class="line">
+        <div class="label">Prix</div>
+        <div class="value">
+            {% if line["prix"] is not none %}
+                <span class="pill-prix">{{ line["prix"] }}</span>
+            {% else %}
+                —
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="line">
+        <div class="label">Date</div>
+        <div class="value">{{ line["date"] or "—" }}</div>
+    </div>
+
+    <div class="line">
+        <div class="label">Fournisseur</div>
+        <div class="value">
+            <div class="supplier-name">
+                {{ line["supplier_name"] or "Fournisseur inconnu" }}
+            </div>
+        </div>
+    </div>
+
+    <div class="line">
+        <div class="label">Téléphone du fournisseur</div>
+        <div class="value">{{ line["supplier_phone"] or "Non renseigné" }}</div>
+    </div>
+
+    <div class="line">
+        <div class="label">E-mail du fournisseur</div>
+        <div class="value">{{ line["supplier_email"] or "Non renseigné" }}</div>
+    </div>
+
+    <a class="back" href="{{ url_for('client_lines', client_id=client_id) }}">
+        ⬅ Retour à la liste
+    </a>
+</div>
+</body>
+</html>
+"""
 
 
 SUPPLIER_TEMPLATE = """
@@ -637,3 +813,32 @@ if __name__ == "__main__":
     init_db()
     # للسيرفر المحلي: 0.0.0.0 يعني يشتغل على كل العناوين في الشبكة
     app.run(host="0.0.0.0", port=8000, debug=False)
+@app.get("/client/<client_id>/line/<int:line_id>")
+def line_detail(client_id, line_id):
+    if client_id != TEST_CLIENT_ID:
+        return "Client not found", 404
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT
+            l.id,
+            l.reference,
+            l.designation,
+            l.marque,
+            l.prix,
+            l.date,
+            s.name  AS supplier_name,
+            s.phone AS supplier_phone,
+            s.email AS supplier_email
+        FROM lines l
+        LEFT JOIN suppliers s ON l.supplier_id = s.id
+        WHERE l.id = ? AND l.client_id = ?
+    """, (line_id, client_id))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        return "Line not found", 404
+
+    return render_template_string(LINE_DETAIL_TEMPLATE, client_id=client_id, line=row)
