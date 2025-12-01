@@ -338,11 +338,15 @@ LOGIN_TEMPLATE = """
     </style>
 </head>
 <body>
-<div class="card">
-    <h1>Connexion client</h1>
-    <div class="subtitle">
-        AminosTech© Gestion Fournisseur — Vue mobile
-    </div>
+    <footer>
+        AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
+        <br>
+        <a href="{{ url_for('logout') }}" style="color:#38bdf8; text-decoration:none; font-size:11px;">
+            Se déconnecter
+        </a>
+    </footer>
+</div>
+
 
     <form method="post">
         <div>
@@ -1066,6 +1070,10 @@ def root():
     # لو ما في تسجيل دخول → نذهب لصفحة login
     return redirect(url_for("login"))
 
+@app.get("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
 
 
 
