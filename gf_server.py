@@ -1,11 +1,22 @@
 import os
-import sqlite3
 from datetime import datetime
+
 from flask import Flask, request, jsonify, render_template_string, redirect, url_for
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
+# -------- إعداد مسار SQLite احتياطي (للتجريب المحلي فقط) --------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "gf_server_v2.db")
+SQLITE_PATH = os.path.join(BASE_DIR, "gf_server_v2.db")
 
+# -------- قراءة DATABASE_URL من متغيّر البيئة (Render) --------
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    # لو ما فيه DATABASE_URL (تشغيل محلي) نستعمل SQLite
+    DATABASE_URL = f"sqlite:///{SQLITE_PATH}"
+
+# -------- تهيئة محرك SQLAlchemy --------
+engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 app = Flask(__name__)
 
@@ -16,71 +27,65 @@ TEST_API_KEY   = "TESTKEY123"
 
 # ============= DB HELPERS =============
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def init_db():
-    conn = get_conn()
-    cur = conn.cursor()
+    """إنشاء الجداول إذا لم تكن موجودة في قاعدة PostgreSQL/SQLite."""
+    with engine.begin() as conn:
+        # جدول العملاء
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS clients (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                api_key TEXT
+            )
+        """))
 
-    # جدول العملاء
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            id TEXT PRIMARY KEY,
-            name TEXT,
-            api_key TEXT
-        )
-    """)
+        # جدول الموردين
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS suppliers (
+                id SERIAL PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                supplier_code TEXT,
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT,
+                address TEXT,
+                notes TEXT,
+                UNIQUE (client_id, supplier_code)
+            )
+        """))
 
-    # جدول الموردين
-        
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS suppliers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id TEXT NOT NULL,
-            supplier_code TEXT,
-            name TEXT NOT NULL,
-            phone TEXT,
-            email TEXT,
-            address TEXT,
-            notes TEXT,
-            UNIQUE (client_id, supplier_code)
-        )
-    """)
+        # جدول السطور
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS lines (
+                id SERIAL PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                supplier_id INTEGER,
+                reference TEXT,
+                designation TEXT,
+                marque TEXT,
+                prix DOUBLE PRECISION,
+                date TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+            )
+        """))
 
-
-    # جدول السطور
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS lines (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            client_id TEXT NOT NULL,
-            supplier_id INTEGER,
-            reference TEXT,
-            designation TEXT,
-            marque TEXT,
-            prix REAL,
-            date TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
-        )
-    """)
-
-    # إدخال عميل تجريبي
-    cur.execute("""
-        INSERT OR IGNORE INTO clients (id, name, api_key)
-        VALUES (?, ?, ?)
-    """, (TEST_CLIENT_ID, "Test Local Client", TEST_API_KEY))
-
-    conn.commit()
-    conn.close()
+        # إدخال عميل تجريبي
+        conn.execute(text("""
+            INSERT INTO clients (id, name, api_key)
+            VALUES (:id, :name, :key)
+            ON CONFLICT (id) DO NOTHING
+        """), {
+            "id": TEST_CLIENT_ID,
+            "name": "Test Local Client",
+            "key": TEST_API_KEY,
+        })
 
 
 def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
     """
     حفظ/تحديث المورد في جدول السيرفر.
+    conn هنا هو Connection من SQLAlchemy (engine.begin / engine.connect)
     يرجع supplier_id
     """
     code    = supplier.get("code") or supplier.get("name") or "NO-CODE"
@@ -90,30 +95,36 @@ def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
     address = (supplier.get("address") or "").strip()
     notes   = (supplier.get("notes") or "").strip()
 
-    cur = conn.cursor()
-
     # 1) نحاول العثور على المورد أولاً
-    cur.execute("""
+    row = conn.execute(text("""
         SELECT id, phone, email, address, notes
         FROM suppliers
-        WHERE client_id = ? AND supplier_code = ?
-    """, (client_id, code))
-    row = cur.fetchone()
+        WHERE client_id = :cid AND supplier_code = :code
+    """), {"cid": client_id, "code": code}).mappings().fetchone()
 
     if row is None:
         # 2) غير موجود → ندخله
-        cur.execute("""
+        new_id = conn.execute(text("""
             INSERT INTO suppliers (client_id, supplier_code, name, phone, email, address, notes)
-            VALUES (?,?,?,?,?,?,?)
-        """, (client_id, code, name, phone, email, address, notes))
-        return cur.lastrowid
+            VALUES (:cid, :code, :name, :phone, :email, :addr, :notes)
+            RETURNING id
+        """), {
+            "cid": client_id,
+            "code": code,
+            "name": name,
+            "phone": phone,
+            "email": email,
+            "addr": address,
+            "notes": notes,
+        }).scalar_one()
+        return int(new_id)
 
     # 3) موجود → نحدّث فقط القيم غير الفارغة
-    supplier_id   = int(row["id"])
-    cur_phone     = (row["phone"] or "").strip()
-    cur_email     = (row["email"] or "").strip()
-    cur_address   = (row["address"] or "").strip()
-    cur_notes     = (row["notes"] or "").strip()
+    supplier_id = int(row["id"])
+    cur_phone   = (row["phone"] or "").strip()
+    cur_email   = (row["email"] or "").strip()
+    cur_address = (row["address"] or "").strip()
+    cur_notes   = (row["notes"] or "").strip()
 
     new_phone   = phone   or cur_phone
     new_email   = email   or cur_email
@@ -124,14 +135,19 @@ def upsert_supplier(conn, client_id: str, supplier: dict) -> int:
         new_email != cur_email or
         new_address != cur_address or
         new_notes != cur_notes):
-        cur.execute("""
+        conn.execute(text("""
             UPDATE suppliers
-            SET phone = ?, email = ?, address = ?, notes = ?
-            WHERE id = ?
-        """, (new_phone, new_email, new_address, new_notes, supplier_id))
+            SET phone = :phone, email = :email, address = :addr, notes = :notes
+            WHERE id = :id
+        """), {
+            "phone": new_phone,
+            "email": new_email,
+            "addr": new_address,
+            "notes": new_notes,
+            "id": supplier_id,
+        })
 
     return supplier_id
-
 
 
 # ============= API: استقبال السطور من GF =============
@@ -143,23 +159,7 @@ def upload_lines():
     {
       "client_id": "LOCAL-TEST",
       "api_key": "TESTKEY123",
-      "lines": [
-        {
-          "reference": "6537E",
-          "designation": "Plaquette frein",
-          "marque": "Peugeot",
-          "prix": 3500,
-          "fournisseur": "Amin Auto",
-          "date": "2025-11-30",
-          "supplier": {
-            "code": "SUP-001",
-            "name": "Amin Auto",
-            "phone": "0776 27 83 77",
-            "address": "عين مليلة",
-            "notes": "مورد رئيسي"
-          }
-        }
-      ]
+      "lines": [...]
     }
     """
     data = request.get_json(force=True)
@@ -175,10 +175,10 @@ def upload_lines():
     if not isinstance(lines, list) or not lines:
         return jsonify({"ok": False, "error": "no_lines"}), 400
 
-    conn = get_conn()
     saved = 0
 
-    try:
+    # نستخدم Transaction واحدة لكل الطلب
+    with engine.begin() as conn:
         for line in lines:
             ref  = (line.get("reference") or "").strip()
             des  = (line.get("designation") or "").strip()
@@ -190,11 +190,7 @@ def upload_lines():
             # نحاول تحويل التاريخ للشكل YYYY-MM-DD
             if date_val:
                 try:
-                    # نحاول عدة صيغ
-                    if " " in date_val and ":" in date_val:
-                        dt = datetime.fromisoformat(date_val)
-                    else:
-                        dt = datetime.fromisoformat(date_val)
+                    dt = datetime.fromisoformat(date_val)
                     date_val = dt.date().isoformat()
                 except Exception:
                     # نتركها كما هي إن فشل التحويل
@@ -209,16 +205,19 @@ def upload_lines():
 
             supplier_id = upsert_supplier(conn, client_id, supplier_obj)
 
-            cur = conn.cursor()
-            cur.execute("""
+            conn.execute(text("""
                 INSERT INTO lines (client_id, supplier_id, reference, designation, marque, prix, date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (client_id, supplier_id, ref, des, marq, prix, date_val))
+                VALUES (:cid, :sid, :ref, :des, :marq, :prix, :date)
+            """), {
+                "cid": client_id,
+                "sid": supplier_id,
+                "ref": ref,
+                "des": des,
+                "marq": marq,
+                "prix": prix,
+                "date": date_val,
+            })
             saved += 1
-
-        conn.commit()
-    finally:
-        conn.close()
 
     return jsonify({"ok": True, "saved": saved})
 
@@ -435,7 +434,7 @@ LINES_TEMPLATE = """
     {% else %}
         {% for r in rows %}
             <a class="card"
-   href="{{ url_for('line_detail', client_id=client_id, line_id=r['id']) }}">
+               href="{{ url_for('line_detail', client_id=client_id, line_id=r['id']) }}">
 
                 <div class="card-top">
                     <div class="ref">{{ r["reference"] or "—" }}</div>
@@ -653,7 +652,6 @@ LINE_DETAIL_TEMPLATE = """
 </html>
 """
 
-
 SUPPLIER_TEMPLATE = """
 <!doctype html>
 <html lang="fr">
@@ -769,6 +767,7 @@ SUPPLIER_TEMPLATE = """
 """
 
 
+# ============= Routes الويب =============
 
 @app.get("/")
 def root():
@@ -783,36 +782,32 @@ def client_lines(client_id):
 
     q = (request.args.get("q") or "").strip()
 
-    conn = get_conn()
-    cur = conn.cursor()
-
     base_sql = """
         SELECT l.id, l.reference, l.designation, l.marque, l.prix, l.date,
                l.supplier_id,
                s.name as supplier_name
         FROM lines l
         LEFT JOIN suppliers s ON l.supplier_id = s.id
-        WHERE l.client_id = ?
+        WHERE l.client_id = :cid
     """
-    params = [client_id]
+    params = {"cid": client_id}
 
     if q:
         base_sql += """
             AND (
-                l.reference   LIKE ?
-                OR l.designation LIKE ?
-                OR l.marque   LIKE ?
-                OR s.name     LIKE ?
+                l.reference   LIKE :like
+                OR l.designation LIKE :like
+                OR l.marque   LIKE :like
+                OR s.name     LIKE :like
             )
         """
-        like = f"%{q}%"
-        params.extend([like, like, like, like])
+        params["like"] = f"%{q}%"
 
     base_sql += " ORDER BY l.id DESC LIMIT 500"
 
-    cur.execute(base_sql, params)
-    rows = cur.fetchall()
-    conn.close()
+    with engine.connect() as conn:
+        result = conn.execute(text(base_sql), params)
+        rows = result.mappings().all()
 
     return render_template_string(LINES_TEMPLATE, client_id=client_id, rows=rows, q=q)
 
@@ -822,19 +817,16 @@ def supplier_page(client_id, supplier_id):
     if client_id != TEST_CLIENT_ID:
         return "Client not found", 404
 
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT * FROM suppliers
-        WHERE id = ? AND client_id = ?
-    """, (supplier_id, client_id))
-    supplier = cur.fetchone()
-    conn.close()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT * FROM suppliers
+            WHERE id = :id AND client_id = :cid
+        """), {"id": supplier_id, "cid": client_id}).mappings().fetchone()
 
-    if not supplier:
+    if not row:
         return "Supplier not found", 404
 
-    return render_template_string(SUPPLIER_TEMPLATE, client_id=client_id, supplier=supplier)
+    return render_template_string(SUPPLIER_TEMPLATE, client_id=client_id, supplier=row)
 
 
 @app.get("/client/<client_id>/line/<int:line_id>")
@@ -842,25 +834,22 @@ def line_detail(client_id, line_id):
     if client_id != TEST_CLIENT_ID:
         return "Client not found", 404
 
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT
-            l.id,
-            l.reference,
-            l.designation,
-            l.marque,
-            l.prix,
-            l.date,
-            s.name  AS supplier_name,
-            s.phone AS supplier_phone,
-            s.email AS supplier_email
-        FROM lines l
-        LEFT JOIN suppliers s ON l.supplier_id = s.id
-        WHERE l.id = ? AND l.client_id = ?
-    """, (line_id, client_id))
-    row = cur.fetchone()
-    conn.close()
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT
+                l.id,
+                l.reference,
+                l.designation,
+                l.marque,
+                l.prix,
+                l.date,
+                s.name  AS supplier_name,
+                s.phone AS supplier_phone,
+                s.email AS supplier_email
+            FROM lines l
+            LEFT JOIN suppliers s ON l.supplier_id = s.id
+            WHERE l.id = :id AND l.client_id = :cid
+        """), {"id": line_id, "cid": client_id}).mappings().fetchone()
 
     if not row:
         return "Line not found", 404
