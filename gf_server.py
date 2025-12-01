@@ -857,6 +857,10 @@ def line_detail(client_id, line_id):
     return render_template_string(LINE_DETAIL_TEMPLATE, client_id=client_id, line=row)
 
 
+# نستدعي init_db بمجرد استيراد الملف
+init_db()
+
 if __name__ == "__main__":
-    init_db()
+    # تشغيل محلي فقط (من دون waitress)
     app.run(host="0.0.0.0", port=8000, debug=False)
+
