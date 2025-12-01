@@ -483,6 +483,17 @@ LINES_TEMPLATE = """
     const form  = document.getElementById('searchForm');
     if (!input || !form) return;
 
+    // 🟦 عند تحميل الصفحة رجّع التركيز للكومبو وحط المؤشر في آخر النص
+    window.addEventListener('load', function () {
+        input.focus();
+        const val = input.value || "";
+        try {
+            input.setSelectionRange(val.length, val.length);
+        } catch (e) {
+            // بعض المتصفحات القديمة قد لا تدعم setSelectionRange، نتجاهل الخطأ
+        }
+    });
+
     let timer = null;
 
     input.addEventListener('input', function () {
@@ -491,13 +502,14 @@ LINES_TEMPLATE = """
             clearTimeout(timer);
         }
 
-        // بعد 300ms من آخر تغيير في النص نرسل الطلب
+        // ⏱ نزيد التأخير قليلاً (مثلاً 600ms) حتى لا يعيد التحميل بسرعة كبيرة
         timer = setTimeout(function () {
             form.submit();
-        }, 300);
+        }, 600);
     });
 })();
 </script>
+
 
 </body>
 </html>
