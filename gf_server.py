@@ -423,7 +423,7 @@ LINES_TEMPLATE = """
         </form>
     </div>
 
-        <div class="summary" id="summary">
+    <div class="summary" id="summary">
         {{ rows|length }} lignes trouvées
         {% if q %}
             • filtre : « {{ q }} »
@@ -474,6 +474,7 @@ LINES_TEMPLATE = """
     {% endif %}
     </div>
 
+</div>  <!-- إغلاق container -->
 
 <script>
 (function () {
@@ -564,7 +565,7 @@ LINES_TEMPLATE = """
 </a>`;
                 });
 
-                listDiv.innerHTML = parts.join("\n");
+                listDiv.innerHTML = parts.join("\\n");
             })
             .catch(err => {
                 console.error("Search error:", err);
@@ -573,10 +574,10 @@ LINES_TEMPLATE = """
 })();
 </script>
 
-
 </body>
 </html>
 """
+
 
 
 LINE_DETAIL_TEMPLATE = """
