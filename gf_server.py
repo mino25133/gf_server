@@ -338,15 +338,11 @@ LOGIN_TEMPLATE = """
     </style>
 </head>
 <body>
-    <footer>
-        AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
-        <br>
-        <a href="{{ url_for('logout') }}" style="color:#38bdf8; text-decoration:none; font-size:11px;">
-            Se déconnecter
-        </a>
-    </footer>
-</div>
-
+<div class="card">
+    <h1>Connexion client</h1>
+    <div class="subtitle">
+        AminosTech© Gestion Fournisseur — Vue mobile
+    </div>
 
     <form method="post">
         <div>
@@ -630,7 +626,14 @@ LINES_TEMPLATE = """
         {% endfor %}
     {% endif %}
     </div>
-
+<footer>
+    AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
+    <br>
+    <a href="{{ url_for('logout') }}"
+       style="color:#38bdf8; text-decoration:none; font-size:11px;">
+        Se déconnecter
+    </a>
+</footer>
 </div>  <!-- إغلاق container -->
 
 <script>
