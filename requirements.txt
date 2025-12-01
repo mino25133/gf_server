@@ -1,4 +1,6 @@
 flask
 requests
 sqlalchemy
+psycopg2-binary
 waitress
+
