@@ -423,13 +423,14 @@ LINES_TEMPLATE = """
         </form>
     </div>
 
-    <div class="summary">
+        <div class="summary" id="summary">
         {{ rows|length }} lignes trouvées
         {% if q %}
             • filtre : « {{ q }} »
         {% endif %}
     </div>
 
+    <div id="linesList">
     {% if rows|length == 0 %}
         <div class="no-data">
             Aucune ligne à afficher pour le moment.
@@ -471,42 +472,104 @@ LINES_TEMPLATE = """
             </a>
         {% endfor %}
     {% endif %}
+    </div>
 
-    <footer>
-        AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
-    </footer>
-</div>
 
 <script>
 (function () {
-    const input = document.getElementById('searchInput');
-    const form  = document.getElementById('searchForm');
-    if (!input || !form) return;
+    const input   = document.getElementById('searchInput');
+    const form    = document.getElementById('searchForm');
+    const listDiv = document.getElementById('linesList');
+    const summary = document.getElementById('summary');
 
-    // 🟦 عند تحميل الصفحة رجّع التركيز للكومبو وحط المؤشر في آخر النص
+    if (!input || !form || !listDiv || !summary) return;
+
+    // نمنع إرسال الفورم بالطريقة التقليدية (منع reload)
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+    });
+
+    // عند تحميل الصفحة نركز على خانة البحث
     window.addEventListener('load', function () {
         input.focus();
         const val = input.value || "";
         try {
             input.setSelectionRange(val.length, val.length);
-        } catch (e) {
-            // بعض المتصفحات القديمة قد لا تدعم setSelectionRange، نتجاهل الخطأ
-        }
+        } catch (e) {}
     });
 
     let timer = null;
 
     input.addEventListener('input', function () {
-        // نلغي المؤقت السابق
         if (timer) {
             clearTimeout(timer);
         }
 
-        // ⏱ نزيد التأخير قليلاً (مثلاً 600ms) حتى لا يعيد التحميل بسرعة كبيرة
         timer = setTimeout(function () {
-            form.submit();
-        }, 600);
+            doSearch(input.value || "");
+        }, 400); // تأخير بسيط
     });
+
+    function doSearch(query) {
+        const params = new URLSearchParams();
+        if (query.trim() !== "") {
+            params.set("q", query.trim());
+        }
+        params.set("ajax", "1");
+
+        fetch(`/client/{{ client_id }}/lines?` + params.toString())
+            .then(resp => resp.json())
+            .then(rows => {
+                // تحديث الملخص
+                let txt = rows.length + " lignes trouvées";
+                if (query.trim() !== "") {
+                    txt += " • filtre : « " + query.trim() + " »";
+                }
+                summary.textContent = txt;
+
+                // بناء HTML جديد للقائمة
+                if (!rows.length) {
+                    listDiv.innerHTML = `
+                        <div class="no-data">
+                            Aucune ligne à afficher pour le moment.
+                        </div>
+                    `;
+                    return;
+                }
+
+                const parts = rows.map(r => {
+                    const ref  = r.reference || "—";
+                    const prix = (r.prix !== null && r.prix !== undefined) ? r.prix : "—";
+                    const des  = r.designation || "";
+                    const marque = r.marque || "Sans marque";
+                    const fournisseur = r.supplier_name || "Fournisseur inconnu";
+                    const date = r.date || "—";
+
+                    const href = `/client/{{ client_id }}/line/${r.id}`;
+
+                    return `
+<a class="card" href="${href}">
+    <div class="card-top">
+        <div class="ref">${ref}</div>
+        <div class="prix">${prix}</div>
+    </div>
+    <div class="designation">${des}</div>
+    <div class="meta-row">
+        <div class="badge badge-marque">${marque}</div>
+        <div class="badge badge-fournisseur">
+            <span class="icon">👤</span>${fournisseur}
+        </div>
+    </div>
+    <div class="date">Date : ${date} • ID: ${r.id}</div>
+</a>`;
+                });
+
+                listDiv.innerHTML = parts.join("\n");
+            })
+            .catch(err => {
+                console.error("Search error:", err);
+            });
+    }
 })();
 </script>
 
@@ -814,12 +877,15 @@ def root():
     return redirect(url_for("client_lines", client_id=TEST_CLIENT_ID))
 
 
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for
+
 @app.get("/client/<client_id>/lines")
 def client_lines(client_id):
     if client_id != TEST_CLIENT_ID:
         return "Client not found", 404
 
     q = (request.args.get("q") or "").strip()
+
     base_sql = """
         SELECT l.id, l.reference, l.designation, l.marque, l.prix, l.date,
                l.supplier_id,
@@ -833,10 +899,10 @@ def client_lines(client_id):
     if q:
         base_sql += """
             AND (
-                LOWER(l.reference)   LIKE :like
+                LOWER(l.reference)     LIKE :like
                 OR LOWER(l.designation) LIKE :like
-                OR LOWER(l.marque)   LIKE :like
-                OR LOWER(s.name)     LIKE :like
+                OR LOWER(l.marque)     LIKE :like
+                OR LOWER(s.name)       LIKE :like
             )
         """
         params["like"] = f"%{q.lower()}%"
@@ -847,8 +913,23 @@ def client_lines(client_id):
         result = conn.execute(text(base_sql), params)
         rows = result.mappings().all()
 
-    return render_template_string(LINES_TEMPLATE, client_id=client_id, rows=rows, q=q)
+    # 🔹 في حالة AJAX نرجع JSON فقط
+    if request.args.get("ajax") == "1":
+        return jsonify([
+            {
+                "id": r["id"],
+                "reference": r["reference"],
+                "designation": r["designation"],
+                "marque": r["marque"],
+                "prix": r["prix"],
+                "date": r["date"],
+                "supplier_name": r["supplier_name"],
+            }
+            for r in rows
+        ])
 
+    # 🔹 الحالة العادية ترجع HTML
+    return render_template_string(LINES_TEMPLATE, client_id=client_id, rows=rows, q=q)
 
 
 @app.get("/client/<client_id>/supplier/<int:supplier_id>")
