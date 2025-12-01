@@ -403,27 +403,6 @@ LINES_TEMPLATE = """
         }
     </style>
 </head>
-<script>
-(function () {
-    const input = document.getElementById('searchInput');
-    const form  = document.getElementById('searchForm');
-    if (!input || !form) return;
-
-    let timer = null;
-
-    input.addEventListener('input', function () {
-        // كل مرة يكتب أو يحذف حرف نلغي التايمر القديم
-        if (timer) {
-            clearTimeout(timer);
-        }
-
-        // نعمل تأخير بسيط 300ms حتى لا نرسل طلب مع كل ضغطة
-        timer = setTimeout(function () {
-            form.submit();
-        }, 300);
-    });
-})();
-</script>
 
 <body>
 <header>
@@ -433,17 +412,16 @@ LINES_TEMPLATE = """
 <div class="container">
 
     <div class="filters">
-    <form method="get" id="searchForm">
-        <input type="text"
-               id="searchInput"
-               name="q"
-               value="{{ q }}"
-               autocomplete="off"
-               placeholder="Recherche : référence, désignation, marque ou fournisseur">
-        <button type="submit">OK</button>
-    </form>
-</div>
-
+        <form method="get" id="searchForm">
+            <input type="text"
+                   id="searchInput"
+                   name="q"
+                   value="{{ q }}"
+                   autocomplete="off"
+                   placeholder="Recherche : référence, désignation, marque ou fournisseur">
+            <button type="submit">OK</button>
+        </form>
+    </div>
 
     <div class="summary">
         {{ rows|length }} lignes trouvées
@@ -498,9 +476,33 @@ LINES_TEMPLATE = """
         AminosTech© Gestion Fournisseur — Vue mobile (lecture seule)
     </footer>
 </div>
+
+<script>
+(function () {
+    const input = document.getElementById('searchInput');
+    const form  = document.getElementById('searchForm');
+    if (!input || !form) return;
+
+    let timer = null;
+
+    input.addEventListener('input', function () {
+        // نلغي المؤقت السابق
+        if (timer) {
+            clearTimeout(timer);
+        }
+
+        // بعد 300ms من آخر تغيير في النص نرسل الطلب
+        timer = setTimeout(function () {
+            form.submit();
+        }, 300);
+    });
+})();
+</script>
+
 </body>
 </html>
 """
+
 
 LINE_DETAIL_TEMPLATE = """
 <!doctype html>
@@ -806,7 +808,6 @@ def client_lines(client_id):
         return "Client not found", 404
 
     q = (request.args.get("q") or "").strip()
-
     base_sql = """
         SELECT l.id, l.reference, l.designation, l.marque, l.prix, l.date,
                l.supplier_id,
@@ -820,13 +821,13 @@ def client_lines(client_id):
     if q:
         base_sql += """
             AND (
-                l.reference   LIKE :like
-                OR l.designation LIKE :like
-                OR l.marque   LIKE :like
-                OR s.name     LIKE :like
+                LOWER(l.reference)   LIKE :like
+                OR LOWER(l.designation) LIKE :like
+                OR LOWER(l.marque)   LIKE :like
+                OR LOWER(s.name)     LIKE :like
             )
         """
-        params["like"] = f"%{q}%"
+        params["like"] = f"%{q.lower()}%"
 
     base_sql += " ORDER BY l.id DESC LIMIT 500"
 
@@ -835,6 +836,7 @@ def client_lines(client_id):
         rows = result.mappings().all()
 
     return render_template_string(LINES_TEMPLATE, client_id=client_id, rows=rows, q=q)
+
 
 
 @app.get("/client/<client_id>/supplier/<int:supplier_id>")
