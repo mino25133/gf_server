@@ -403,6 +403,28 @@ LINES_TEMPLATE = """
         }
     </style>
 </head>
+<script>
+(function () {
+    const input = document.getElementById('searchInput');
+    const form  = document.getElementById('searchForm');
+    if (!input || !form) return;
+
+    let timer = null;
+
+    input.addEventListener('input', function () {
+        // كل مرة يكتب أو يحذف حرف نلغي التايمر القديم
+        if (timer) {
+            clearTimeout(timer);
+        }
+
+        // نعمل تأخير بسيط 300ms حتى لا نرسل طلب مع كل ضغطة
+        timer = setTimeout(function () {
+            form.submit();
+        }, 300);
+    });
+})();
+</script>
+
 <body>
 <header>
     AminosTech© GF — Lignes du client {{ client_id }}
@@ -411,14 +433,17 @@ LINES_TEMPLATE = """
 <div class="container">
 
     <div class="filters">
-        <form method="get">
-            <input type="text"
-                   name="q"
-                   value="{{ q }}"
-                   placeholder="Recherche : référence, désignation, marque ou fournisseur">
-            <button type="submit">OK</button>
-        </form>
-    </div>
+    <form method="get" id="searchForm">
+        <input type="text"
+               id="searchInput"
+               name="q"
+               value="{{ q }}"
+               autocomplete="off"
+               placeholder="Recherche : référence, désignation, marque ou fournisseur">
+        <button type="submit">OK</button>
+    </form>
+</div>
+
 
     <div class="summary">
         {{ rows|length }} lignes trouvées
