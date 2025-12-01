@@ -19,6 +19,9 @@ if not DATABASE_URL:
 engine: Engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
 app = Flask(__name__)
+# مفتاح سري للـ session (استعمل قيمة حقيقية في الإنتاج من متغيّر بيئة)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+
 
 # 🔐 عميل تجريبي واحد الآن (لاحقاً نعمل لوحة عملاء كاملة)
 TEST_CLIENT_ID = "LOCAL-TEST"
@@ -221,6 +224,156 @@ def upload_lines():
 
     return jsonify({"ok": True, "saved": saved})
 
+LOGIN_TEMPLATE = """
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <title>Connexion client - GF</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --bg: #020617;
+            --bg-card: #020617;
+            --border: #1f2937;
+            --accent: #0ea5e9;
+            --accent-soft: #38bdf8;
+            --text-main: #e5e7eb;
+            --text-muted: #9ca3af;
+            --error: #f97373;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: radial-gradient(circle at top, #0f172a, #020617);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 420px;
+            padding: 20px 18px 22px 18px;
+            border-radius: 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            box-shadow: 0 18px 40px rgba(15,23,42,0.8);
+        }
+
+        h1 {
+            margin: 0 0 4px 0;
+            font-size: 20px;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 16px;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 2px;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 9px 11px;
+            border-radius: 999px;
+            border: 1px solid #1e293b;
+            background: #020617;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        button {
+            margin-top: 6px;
+            border: none;
+            border-radius: 999px;
+            padding: 9px 12px;
+            background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .error {
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--error);
+            text-align: center;
+        }
+
+        .footer {
+            margin-top: 14px;
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Connexion client</h1>
+    <div class="subtitle">
+        AminosTech© Gestion Fournisseur — Vue mobile
+    </div>
+
+    <form method="post">
+        <div>
+            <label for="client_id">Client ID</label>
+            <input type="text" id="client_id" name="client_id"
+                   value="{{ client_id or '' }}"
+                   placeholder="Ex: LOCAL-TEST" autocomplete="off">
+        </div>
+
+        <div>
+            <label for="api_key">API Key</label>
+            <input type="password" id="api_key" name="api_key"
+                   placeholder="Clé API fournie par AminosTech">
+        </div>
+
+        <button type="submit">Se connecter</button>
+    </form>
+
+    {% if error %}
+        <div class="error">
+            {{ error }}
+        </div>
+    {% endif %}
+
+    <div class="footer">
+        Utilisez les mêmes identifiants configurés dans l'application GF.
+    </div>
+</div>
+</body>
+</html>
+"""
 
 # ============= واجهة الويب (صفحة الهاتف) =============
 
@@ -869,21 +1022,64 @@ SUPPLIER_TEMPLATE = """
 </html>
 """
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    default_client_id = ""
+
+    if request.method == "POST":
+        client_id = (request.form.get("client_id") or "").strip()
+        api_key   = (request.form.get("api_key") or "").strip()
+        default_client_id = client_id
+
+        if not client_id or not api_key:
+            error = "Veuillez saisir Client ID et API Key."
+        else:
+            with engine.connect() as conn:
+                row = conn.execute(text("""
+                    SELECT id, name
+                    FROM clients
+                    WHERE id = :cid AND api_key = :key
+                """), {"cid": client_id, "key": api_key}).mappings().fetchone()
+
+            if row is None:
+                error = "Identifiants invalides."
+            else:
+                # نجاح: نخزن client_id في session
+                session["client_id"] = row["id"]
+                # يمكن لاحقاً استعمال row["name"] إذا احتجنا
+                return redirect(url_for("client_lines", client_id=row["id"]))
+
+    return render_template_string(
+        LOGIN_TEMPLATE,
+        error=error,
+        client_id=default_client_id,
+    )
 
 # ============= Routes الويب =============
 
 @app.get("/")
 def root():
-    # تحويل بسيط مباشرة إلى العميل التجريبي
-    return redirect(url_for("client_lines", client_id=TEST_CLIENT_ID))
+    cid = session.get("client_id")
+    if cid:
+        return redirect(url_for("client_lines", client_id=cid))
+    # لو ما في تسجيل دخول → نذهب لصفحة login
+    return redirect(url_for("login"))
 
 
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for
+
+
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 
 @app.get("/client/<client_id>/lines")
 def client_lines(client_id):
-    if client_id != TEST_CLIENT_ID:
-        return "Client not found", 404
+    # 🔒 التحقق من تسجيل الدخول
+    sess_id = session.get("client_id")
+    if not sess_id:
+        return redirect(url_for("login"))
+    if sess_id != client_id:
+        # لو حاول يدخل client_id مختلف عن اللي في session
+        return redirect(url_for("client_lines", client_id=sess_id))
 
     q = (request.args.get("q") or "").strip()
 
@@ -900,10 +1096,10 @@ def client_lines(client_id):
     if q:
         base_sql += """
             AND (
-                LOWER(l.reference)     LIKE :like
+                LOWER(l.reference)      LIKE :like
                 OR LOWER(l.designation) LIKE :like
-                OR LOWER(l.marque)     LIKE :like
-                OR LOWER(s.name)       LIKE :like
+                OR LOWER(l.marque)      LIKE :like
+                OR LOWER(s.name)        LIKE :like
             )
         """
         params["like"] = f"%{q.lower()}%"
@@ -935,14 +1131,20 @@ def client_lines(client_id):
 
 @app.get("/client/<client_id>/supplier/<int:supplier_id>")
 def supplier_page(client_id, supplier_id):
-    if client_id != TEST_CLIENT_ID:
-        return "Client not found", 404
+    # 🔒 تحقّق من session
+    sess_id = session.get("client_id")
+    if not sess_id:
+        return redirect(url_for("login"))
+    if sess_id != client_id:
+        return "Forbidden", 403
 
     with engine.connect() as conn:
         row = conn.execute(text("""
             SELECT * FROM suppliers
             WHERE id = :id AND client_id = :cid
         """), {"id": supplier_id, "cid": client_id}).mappings().fetchone()
+    ...
+
 
     if not row:
         return "Supplier not found", 404
@@ -952,8 +1154,12 @@ def supplier_page(client_id, supplier_id):
 
 @app.get("/client/<client_id>/line/<int:line_id>")
 def line_detail(client_id, line_id):
-    if client_id != TEST_CLIENT_ID:
-        return "Client not found", 404
+    # 🔒 تحقّق من session
+    sess_id = session.get("client_id")
+    if not sess_id:
+        return redirect(url_for("login"))
+    if sess_id != client_id:
+        return "Forbidden", 403
 
     with engine.connect() as conn:
         row = conn.execute(text("""
@@ -971,6 +1177,8 @@ def line_detail(client_id, line_id):
             LEFT JOIN suppliers s ON l.supplier_id = s.id
             WHERE l.id = :id AND l.client_id = :cid
         """), {"id": line_id, "cid": client_id}).mappings().fetchone()
+    ...
+
 
     if not row:
         return "Line not found", 404
